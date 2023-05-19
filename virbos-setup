@@ -1,0 +1,100 @@
+#!/bin/sh
+# virbos-setup: simple prompt-based installer for Virbos
+
+writeln() {
+	printf "$1\n"
+}
+ewriteln() {
+	>&2 writeln "$1"
+}
+
+# ask takes 3 arguments:
+# - the question
+# - a comma-separated list of options
+# - the default option
+# The user's answer is stored in the
+# $answer variable.
+ask() {
+	OLDIFS="$IFS"
+	IFS=','
+	while true; do
+		read -p "$1 [$3] " answer
+		if [ "$answer" = '?' ]; then
+			writeln "Valid options:"
+			for option in $2; do
+				writeln " - $option"
+			done
+			continue
+		fi
+		# Check for ^D or Enter
+		if [ -z "$answer" ]; then
+			answer="$3"
+			IFS="$OLDIFS"
+			unset OLDIFS
+			return 0
+		fi
+		# Check input against options
+		for option in $2; do
+			if [ "$answer" = "$option" ]; then
+				IFS="$OLDIFS"
+				unset OLDIFS
+				return 0
+			fi
+		done
+		# Invalid input
+		ewriteln "Invalid option '$answer'."
+		writeln
+	done
+}
+# ask_yn takes 2 arguments:
+# - the question
+# - the default option (either 'y' or 'n')
+# The user's answer is stored in the
+# $answer variable as 'y' or 'n'.
+ask_yn () {
+	while true; do
+		read -p "$1 [$2] " answer
+		if [ "$answer" = '?' ]; then
+			writeln "Valid options:"
+			writeln "yes, no"
+			continue
+		fi
+		# Check for ^D or Enter
+		if [ -z "$answer" ]; then
+			answer="$2"
+			return 0
+		fi
+		# Check input against options
+		case "$answer" in
+			[Yy]*)
+				answer='y'
+				return 0
+				;;
+			[Nn]*)
+				answer='n'
+				return 0
+				;;
+			*)
+				# Invalid input
+				ewriteln "Invalid option '$answer'."
+				writeln
+				;;
+		esac
+	done
+}
+
+listdisk() {
+	writeln "Name\tSize"
+	lsblk | grep '^[a-z]' | awk '{print $1, $4}'
+}
+
+writeln "Welcome to virbos-setup!"
+writeln "If you are unsure what to type, you can always type '?'"
+writeln "(without the quotation marks) to get a list of available options."
+writeln
+
+# Simple demonstration
+ask_yn "Do you like Virbos?" y
+if [ "$answer" = n ]; then
+	writeln "You cannot say no"
+fi
