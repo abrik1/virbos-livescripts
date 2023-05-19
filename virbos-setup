@@ -98,3 +98,12 @@ ask_yn "Do you like Virbos?" y
 if [ "$answer" = n ]; then
 	writeln "You cannot say no"
 fi
+
+CheckRoot() {
+	if [ "$(whoami)" = "root" ]; then
+		echo "Root user detected. Continuing..."
+	else
+		echo "Please run the script with root permissions."
+		exit
+	fi
+}
