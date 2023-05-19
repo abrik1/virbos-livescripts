@@ -107,3 +107,13 @@ CheckRoot() {
 		exit
 	fi
 }
+
+KeyMap-setup() {
+	echo "Listing Keymaps..."
+	localectl list-keymaps
+	echo "Select Keymap: "
+	read Keymap
+	localectl set-keymap --no-convert "$Keymap"
+	localectl set-x11-keymap --no-convert "$Keymap"
+	export UserKeyMap="$Keymap"
+}
