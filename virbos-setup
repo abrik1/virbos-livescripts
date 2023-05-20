@@ -39,7 +39,6 @@ ask() {
 	OLDIFS="$IFS"
 	IFS=','
 	while true; do
-		writeln
 		read -p "$1 [$3] " answer
 		if [ "$answer" = '?' ]; then
 			writeln "Valid options:"
@@ -79,7 +78,6 @@ ask_customhelp() {
 	OLDIFS="$IFS"
 	IFS=','
 	while true; do
-		writeln
 		read -p "$1 [$3] " answer
 		if [ "$answer" = '?' ]; then
 			eval $4
@@ -115,7 +113,6 @@ ask_nodefault() {
 	OLDIFS="$IFS"
 	IFS=','
 	while true; do
-		writeln
 		read -p "$1 " answer
 		if [ "$answer" = '?' ]; then
 			writeln "Valid options:"
@@ -148,7 +145,6 @@ ask_nodefault() {
 # $answer variable as 'y' or 'n'.
 ask_yn () {
 	while true; do
-		writeln
 		read -p "$1 [$2] " answer
 		if [ "$answer" = '?' ]; then
 			writeln "Valid options:"
@@ -169,6 +165,10 @@ ask_yn () {
 			return 0
 		fi
 	done
+}
+
+mesg() {
+	writeln "\033[1;32m * \033[0;1m $1 \033[0m"
 }
 
 # Installer components #
@@ -194,6 +194,36 @@ disklist() {
 	getdisks | awk '{print $1, $4}'
 }
 
+getlayout() {
+	ask_yn "Have you created all necessary partitions?" n
+	if [ "$answer" = 'y' ]; then
+		for partition in $(getpartitions "$disk"); do
+			if [ -z "$partitions" ]; then
+				partitions="$partition";
+			else
+				partitions="$partitions,$partition"
+			fi
+		done
+		ask_yn "Do you want to install a bootloader?" y
+		if [ "$answer" = 'y' ]; then
+			ask_nodefault "What partition would you like to use for the bootloader?" "$partitions"
+			partition_boot="$answer"
+		fi
+		ask_yn "Do you want to use a swap partition?" n
+		if [ "$answer" = 'y' ]; then
+			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
+			partition_swap="$answer"
+		fi
+		ask_nodefault "What partition would you like to use for the operating system?" "$partitions"
+		partition_data="$answer"
+	elif [ "$answer" = 'n' ]; then
+		writeln "Retrying in 3 seconds..."
+		sleep 3
+		return 1
+	fi
+	return 0
+}
+
 partition_tui() {
 	writeln "Please make sure not to do anything destructive."
 	writeln "Resizing or moving partitions is usually not a good idea."
@@ -205,42 +235,44 @@ partition_tui() {
 	read x
 	while true; do
 		cfdisk /dev/"$disk"
-
-		ask_yn "Have you created all necessary partitions?" n
-		if [ "$answer" = 'y' ]; then
-			for partition in $(getpartitions); do
-				partitions="$partitions,$partition"
-			done
-			ask_yn "Do you want to install a bootloader?" y
-			if [ "$answer" = 'y' ]; then
-				ask_nodefault "What partition would you like to use for the bootloader?" "$partitions"
-				partition_boot="$answer"
-			fi
-			ask_yn "Do you want to use a swap partition?" n
-			if [ "$answer" = 'y' ]; then
-				ask_nodefault "What partition would you like to use for swap space?" "$partitions"
-				partition_swap="$answer"
-			fi
-			ask_nodefault "What partition would you like to use for the operating system?" "$partitions"
-			partition_data="$answer"
-		elif [ "$answer" = 'n' ]; then
-			writeln "Retrying in 5 seconds..."
-			sleep 5
+		if getlayout; then
+			break
+		else
 			continue
 		fi
 	done
 }
 
+partition_shell() {
+	writeln "Lead the way, captain!"
+	while true; do
+		$VIRBOSSETUP_SHELL
+		if getlayout; then
+			break
+		else
+			continue
+		fi
+	done
+}
+
+# setup routines #
+
 setup_keymaps() {
+	writeln
 	for km in $(localectl --no-pager list-keymaps); do
 		keymaps="$keymaps,$km"
 	done
 	ask_customhelp "What keymap would you like to use?" "$keymaps" us "localectl --no-pager list-keymaps | less -E"
 	keymap="$answer"
+	mesg "Keymap configured."
 }
 
 setup_network() {
-	if testnetwork; then return 0; fi
+	writeln
+	if testnetwork; then
+		mesg "Network configured."
+		return 0
+	fi
 
 	while true; do
 		ask "Would you like to use a TUI to configure network connections,
@@ -251,15 +283,18 @@ or would you like to do it manually using a shell?" tui,shell tui
 			writeln "Lead the way, captain!"
 			$VIRBOSSETUP_SHELL
 		fi
-		if testnetwork; then return 0; fi
+		if testnetwork; then break; fi
 	done
+	mesg "Network configured."
 }
 
 setup_disks() {
+	writeln
 	writeln "Disks available:"
 	disklist
 	for disk in $(getdisks | awk '{print $1}'); do
-		disks="$disks,$disk"
+		[ -z "$disks" ] && disks="$disk"
+		[ -z "$disks" ] || disks="$disks,$disk"
 		defaultdisk="$disk"
 	done
 	ask "What disk would you like to install Virbos on?" "$disks" "$defaultdisk"
@@ -286,16 +321,18 @@ decide the partition layout."
 				continue
 			fi
 		elif [ "$answer" = "custom" ]; then
-			ask "Would you like to use a TUI to configure partitions,,
+			ask "Would you like to use a TUI to configure partitions,
 or would you like to do it manually using a shell?" tui,shell tui
 			if [ "$answer" = "tui" ]; then
 				partition_tui
+				break
 			elif [ "$answer" = "shell" ]; then
-				writeln "Lead the way, captain!"
-				$VIRBOSSETUP_SHELL
+				partition_shell
+				break
 			fi
 		fi
 	done
+	mesg "Disks configured."
 }
 
 # Begin
