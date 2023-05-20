@@ -3,11 +3,19 @@
 
 set -e
 
+[ -z "$VIRBOSSETUP_SHELL" ] && VIRBOSSETUP_SHELL="zsh"
+
 writeln() {
 	printf "$1\n"
 }
 ewriteln() {
 	>&2 writeln "$1"
+}
+sgrep() {
+	printf "$2" | grep -Eq "$1"
+}
+lower() {
+	printf "$1" | tr '[:upper:]' '[:lower:]'
 }
 
 panic() {
@@ -18,6 +26,7 @@ panic() {
 invalidinput() {
 	ewriteln "Invalid input '$1'."
 	ewriteln "Press '?' for help."
+	writeln
 }
 
 # ask takes 3 arguments:
@@ -30,6 +39,7 @@ ask() {
 	OLDIFS="$IFS"
 	IFS=','
 	while true; do
+		writeln
 		read -p "$1 [$3] " answer
 		if [ "$answer" = '?' ]; then
 			writeln "Valid options:"
@@ -47,15 +57,15 @@ ask() {
 		fi
 		# Check input against options
 		for option in $2; do
-			if [ "$answer" = "$option" ]; then
+			if [ "$(lower $answer)" = "$(lower $option)" ]; then
 				IFS="$OLDIFS"
 				unset OLDIFS
+				answer="$(lower $answer)"
 				return 0
 			fi
 		done
 		# Invalid input
 		invalidinput "$answer"
-		writeln
 	done
 }
 # ask_customhelp takes 3 arguments:
@@ -69,6 +79,7 @@ ask_customhelp() {
 	OLDIFS="$IFS"
 	IFS=','
 	while true; do
+		writeln
 		read -p "$1 [$3] " answer
 		if [ "$answer" = '?' ]; then
 			eval $4
@@ -83,15 +94,51 @@ ask_customhelp() {
 		fi
 		# Check input against options
 		for option in $2; do
-			if [ "$answer" = "$option" ]; then
+			if [ "$(lower $answer)" = "$(lower $option)" ]; then
 				IFS="$OLDIFS"
 				unset OLDIFS
+				answer="$(lower $answer)"
 				return 0
 			fi
 		done
 		# Invalid input
 		invalidinput "$answer"
 		writeln
+	done
+}
+# ask_nodefault takes 2 arguments:
+# - the question
+# - a comma-separated list of options
+# The user's answer is stored in the
+# $answer variable.
+ask_nodefault() {
+	OLDIFS="$IFS"
+	IFS=','
+	while true; do
+		writeln
+		read -p "$1 " answer
+		if [ "$answer" = '?' ]; then
+			writeln "Valid options:"
+			for option in $2; do
+				writeln " - $option"
+			done
+			continue
+		fi
+		# Check for ^D or Enter
+		if [ -z "$answer" ]; then
+			continue
+		fi
+		# Check input against options
+		for option in $2; do
+			if [ "$(lower $answer)" = "$(lower $option)" ]; then
+				IFS="$OLDIFS"
+				unset OLDIFS
+				answer="$(lower $answer)"
+				return 0
+			fi
+		done
+		# Invalid input
+		invalidinput "$answer"
 	done
 }
 # ask_yn takes 2 arguments:
@@ -101,6 +148,7 @@ ask_customhelp() {
 # $answer variable as 'y' or 'n'.
 ask_yn () {
 	while true; do
+		writeln
 		read -p "$1 [$2] " answer
 		if [ "$answer" = '?' ]; then
 			writeln "Valid options:"
@@ -113,33 +161,77 @@ ask_yn () {
 			return 0
 		fi
 		# Check input against options
-		case "$answer" in
-			[Yy]*)
-				answer='y'
-				return 0
-				;;
-			[Nn]*)
-				answer='n'
-				return 0
-				;;
-			*)
-				# Invalid input
-				invalidinput "$answer"
-				writeln
-				;;
-		esac
+		if sgrep "[Yy]([Ee][Ss])?" "$answer"; then
+			answer='y'
+			return 0
+		elif sgrep "[Nn][Oo]?" "$answer"; then
+			answer='n'
+			return 0
+		fi
 	done
 }
 
-listdisk() {
+# Installer components #
+
+testnetwork() {
+	writeln "Checking Internet access..."
+	if ping -c3 archlinux.org >/dev/null 2>/dev/null; then
+		writeln "Connected to Internet."
+		return 0
+	fi
+	ewriteln "Connection failed."
+	return 1
+}
+
+getdisks() {
+	lsblk | grep '^[a-z]'
+}
+getpartitions() {
+	ls /dev/"$1"* | grep -Ev "$1"'$' | grep -Eo "$1.+"
+}
+disklist() {
 	writeln "Name\tSize"
-	lsblk | grep '^[a-z]' | awk '{print $1, $4}'
+	getdisks | awk '{print $1, $4}'
+}
+
+partition_tui() {
+	writeln "Please make sure not to do anything destructive."
+	writeln "Resizing or moving partitions is usually not a good idea."
+	writeln
+	writeln "Make sure to create a partition for the bootloader (recommended size 1 GB),"
+	writeln "a partition for the operating system (recommended size >50 GB),"
+	writeln "and optionally a swap partition."
+	writeln "Press Enter to enter the TUI."
+	read x
+	while true; do
+		cfdisk /dev/"$disk"
+
+		ask_yn "Have you created all necessary partitions?" n
+		if [ "$answer" = 'y' ]; then
+			for partition in $(getpartitions); do
+				partitions="$partitions,$partition"
+			done
+			ask_yn "Do you want to install a bootloader?" y
+			if [ "$answer" = 'y' ]; then
+				ask_nodefault "What partition would you like to use for the bootloader?" "$partitions"
+				partition_boot="$answer"
+			fi
+			ask_yn "Do you want to use a swap partition?" n
+			if [ "$answer" = 'y' ]; then
+				ask_nodefault "What partition would you like to use for swap space?" "$partitions"
+				partition_swap="$answer"
+			fi
+			ask_nodefault "What partition would you like to use for the operating system?" "$partitions"
+			partition_data="$answer"
+		elif [ "$answer" = 'n' ]; then
+			writeln "Retrying in 5 seconds..."
+			sleep 5
+			continue
+		fi
+	done
 }
 
 setup_keymaps() {
-	keymap="us"
-	ask_yn "Would you like to use the default 'us' keymap?" y
-	[ "$answer" = 'y' ] && return 0
 	for km in $(localectl --no-pager list-keymaps); do
 		keymaps="$keymaps,$km"
 	done
@@ -147,7 +239,67 @@ setup_keymaps() {
 	keymap="$answer"
 }
 
-# Root check
+setup_network() {
+	if testnetwork; then return 0; fi
+
+	while true; do
+		ask "Would you like to use a TUI to configure network connections,
+or would you like to do it manually using a shell?" tui,shell tui
+		if [ "$answer" = "tui" ]; then
+			nmtui
+		elif [ "$answer" = "shell" ]; then
+			writeln "Lead the way, captain!"
+			$VIRBOSSETUP_SHELL
+		fi
+		if testnetwork; then return 0; fi
+	done
+}
+
+setup_disks() {
+	writeln "Disks available:"
+	disklist
+	for disk in $(getdisks | awk '{print $1}'); do
+		disks="$disks,$disk"
+		defaultdisk="$disk"
+	done
+	ask "What disk would you like to install Virbos on?" "$disks" "$defaultdisk"
+	disk="$answer"
+
+	writeln "You now have to decide between automatic and custom partitioning.
+If you choose automatic partitioning, the installer will ERASE
+ALL EXISTING DATA ON YOUR DISK so that it can allocate it all for Virbos.
+If you choose custom partitioning, you get to create new partitions and
+decide the partition layout."
+	
+	while true; do
+		ask "Would you like to use use automatic partitioning, or custom partitioning?" automatic,custom automatic
+		if [ "$answer" = "automatic" ]; then
+			writeln "This WILL erase ALL DATA on your disk."
+			writeln "If you agree and want to proceed, type 'I agree'."
+			writeln "Otherwise, type anything else."
+			read -p "> [disagree] " automatic_confirmation
+			if [ "$automatic_confirmation" = "I agree" ]; then
+				partitionmethod="automatic"
+				break
+			else
+				ewriteln "Aborting."
+				continue
+			fi
+		elif [ "$answer" = "custom" ]; then
+			ask "Would you like to use a TUI to configure partitions,,
+or would you like to do it manually using a shell?" tui,shell tui
+			if [ "$answer" = "tui" ]; then
+				partition_tui
+			elif [ "$answer" = "shell" ]; then
+				writeln "Lead the way, captain!"
+				$VIRBOSSETUP_SHELL
+			fi
+		fi
+	done
+}
+
+# Begin
+
 if [ "$(whoami)" != "root" ]; then
 	panic "permission denied; please run as root"
 fi
@@ -155,6 +307,9 @@ fi
 writeln "Welcome to virbos-setup!"
 writeln "If you are unsure what to type, you can always type '?'"
 writeln "(without the quotation marks) to get a list of available options."
-writeln
+writeln "The default answer for a question is always in square brackets."
+writeln "If you wish to use that answer, you can press Enter."
 
 setup_keymaps
+setup_network
+setup_disks
