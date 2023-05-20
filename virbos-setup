@@ -168,7 +168,7 @@ ask_yn () {
 }
 
 mesg() {
-	writeln "\033[1;32m * \033[0;1m $1 \033[0m"
+	writeln "\033[1;32m *\033[0;1m $1 \033[0m"
 }
 
 # Installer components #
@@ -246,7 +246,7 @@ partition_tui() {
 partition_shell() {
 	writeln "Lead the way, captain!"
 	while true; do
-		$VIRBOSSETUP_SHELL
+		$VIRBOSSETUP_SHELL || true
 		if getlayout; then
 			break
 		else
@@ -260,28 +260,43 @@ partition_shell() {
 setup_keymaps() {
 	writeln
 	for km in $(localectl --no-pager list-keymaps); do
-		keymaps="$keymaps,$km"
+		[ -z "$keymaps" ] && keymaps="$km"
+		[ -z "$keymaps" ] || keymaps="$keymaps,$km"
 	done
 	ask_customhelp "What keymap would you like to use?" "$keymaps" us "localectl --no-pager list-keymaps | less -E"
 	keymap="$answer"
 	mesg "Keymap configured."
 }
 
+setup_tzone() {
+	writeln
+	for tz in $(timedatectl --no-pager list-timezones); do
+		[ -z "$timezones" ] && timezones="$tz"
+		[ -z "$timezones" ] || timezones="$timezones,$tz"
+	done
+	ask_customhelp "What is your timezone?" "$timezones" "Europe/Kyiv" "timedatectl --no-pager list-timezones | less -E"
+	timezone="$answer"
+	mesg "Timezone configured."
+}
+
 setup_network() {
 	writeln
+	read -p "Enter a system hostname: [virbos] " hostname
+	if [ -z "$hostname" ]; then
+		hostname="virbos"
+	fi
 	if testnetwork; then
 		mesg "Network configured."
 		return 0
 	fi
 
 	while true; do
-		ask "Would you like to use a TUI to configure network connections,
-or would you like to do it manually using a shell?" tui,shell tui
+		ask "Would you like to use a TUI to configure network connections, or would you like to do it manually using a shell?" tui,shell tui
 		if [ "$answer" = "tui" ]; then
 			nmtui
 		elif [ "$answer" = "shell" ]; then
 			writeln "Lead the way, captain!"
-			$VIRBOSSETUP_SHELL
+			$VIRBOSSETUP_SHELL || true
 		fi
 		if testnetwork; then break; fi
 	done
@@ -300,7 +315,8 @@ setup_disks() {
 	ask "What disk would you like to install Virbos on?" "$disks" "$defaultdisk"
 	disk="$answer"
 
-	writeln "You now have to decide between automatic and custom partitioning.
+	writeln "
+You now have to decide between automatic and custom partitioning.
 If you choose automatic partitioning, the installer will ERASE
 ALL EXISTING DATA ON YOUR DISK so that it can allocate it all for Virbos.
 If you choose custom partitioning, you get to create new partitions and
@@ -311,8 +327,7 @@ decide the partition layout."
 		if [ "$answer" = "automatic" ]; then
 			writeln "This WILL erase ALL DATA on your disk."
 			writeln "If you agree and want to proceed, type 'I agree'."
-			writeln "Otherwise, type anything else."
-			read -p "> [disagree] " automatic_confirmation
+			read -p "? [disagree] " automatic_confirmation
 			if [ "$automatic_confirmation" = "I agree" ]; then
 				partitionmethod="automatic"
 				break
@@ -321,8 +336,7 @@ decide the partition layout."
 				continue
 			fi
 		elif [ "$answer" = "custom" ]; then
-			ask "Would you like to use a TUI to configure partitions,
-or would you like to do it manually using a shell?" tui,shell tui
+			ask "Would you like to use a TUI to configure partitions, or would you like to do it manually using a shell?" tui,shell tui
 			if [ "$answer" = "tui" ]; then
 				partition_tui
 				break
@@ -333,6 +347,52 @@ or would you like to do it manually using a shell?" tui,shell tui
 		fi
 	done
 	mesg "Disks configured."
+}
+
+setup_users() {
+	writeln
+	read -p "Enter a username, or type 'no' to skip: [no] " user
+	if [ -z "$user" ]; then
+		user="no"
+	fi
+	if [ "$user" = "no" ]; then
+		break
+	fi
+	while true; do
+		read -sp "Enter a password for user '$user': " userpasswd_1
+		writeln
+		if [ -z "$userpasswd_1" ]; then
+			continue
+		fi
+		read -sp "Enter it again: " userpasswd_2
+		writeln
+		if [ "$userpasswd_1" != "$userpasswd_2" ]; then
+			ewriteln "Passwords do not match; please try again."
+			continue
+		fi
+		userpasswd="$userpasswd_1"
+		unset userpasswd_1
+		unset userpasswd_2
+		break
+	done
+	while true; do
+		read -sp "Enter a password for the super user: " rootpasswd_1
+		writeln
+		if [ -z "$rootpasswd_1" ]; then
+			continue
+		fi
+		read -sp "Enter it again: " rootpasswd_2
+		writeln
+		if [ "$rootpasswd_1" != "$rootpasswd_2" ]; then
+			ewriteln "Passwords do not match; please try again."
+			continue
+		fi
+		rootpasswd="$rootpasswd_1"
+		unset rootpasswd_1
+		unset rootpasswd_2
+		break
+	done
+	mesg "Users configured."
 }
 
 # Begin
@@ -348,5 +408,9 @@ writeln "The default answer for a question is always in square brackets."
 writeln "If you wish to use that answer, you can press Enter."
 
 setup_keymaps
+setup_tzone
 setup_network
 setup_disks
+setup_users
+
+# vi: ft=sh
