@@ -224,6 +224,25 @@ getlayout() {
 	return 0
 }
 
+define_partitions(){
+	writeln "Formatting ${partition_data} as ext4"
+	mkfs.ext4 ${partition_data}
+	writeln "Formatting ${partition_swap} as swap"
+	mkswap ${partition_swap}
+	writeln "Formatting ${partition_boot} as FAT32"
+	mkfs.fat -F32 ${partition_boot}
+}
+
+mount_partitions(){
+	writeln "Mounting ${partition_data} as /mnt"
+	mount ${partition_data} /mnt
+	writeln "Mounting ${partition_boot} as /mnt/boot"
+	mkdir /mnt/boot
+	mount ${partition_boot} /mnt/boot
+	writeln "Enabling swap on ${partition_swap}"
+	swapon ${partition_swap}
+}
+
 partition_tui() {
 	writeln "Please make sure not to do anything destructive."
 	writeln "Resizing or moving partitions is usually not a good idea."
@@ -412,5 +431,7 @@ setup_tzone
 setup_network
 setup_disks
 setup_users
+define_partitions
+mount_partitions
 
 # vi: ft=sh
