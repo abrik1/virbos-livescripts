@@ -5,6 +5,11 @@ set -e
 
 [ -z "$VIRBOSSETUP_SHELL" ] && VIRBOSSETUP_SHELL="zsh"
 
+# partition UUIDs
+PTYPE_LINUXFST='0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+PTYPE_EFISYSTM='C12A7328-F81F-11D2-BA4B-00A0C93EC93B'
+PTYPE_BIOSBOOT='21686148-6449-6E6F-744E-656564454649'
+
 writeln() {
 	printf "$1\n"
 }
@@ -204,11 +209,10 @@ getlayout() {
 				partitions="$partitions,$partition"
 			fi
 		done
+		ask_nodefault "What partition would you like to use as the boot partition?" "$partitions"
+		partition_boot=/dev/"$answer"
 		ask_yn "Do you want to install a bootloader?" y
-		if [ "$answer" = 'y' ]; then
-			ask_nodefault "What partition would you like to use for the bootloader?" "$partitions"
-			partition_boot="$answer"
-		fi
+		[ "$answer" = y ] && use_grub=1
 		ask_yn "Do you want to use a swap partition?" n
 		if [ "$answer" = 'y' ]; then
 			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
@@ -265,6 +269,7 @@ setup_keymaps() {
 	done
 	ask_customhelp "What keymap would you like to use?" "$keymaps" us "localectl --no-pager list-keymaps | less -E"
 	keymap="$answer"
+	loadkeys "$answer"
 	mesg "Keymap configured."
 }
 
@@ -356,7 +361,7 @@ setup_users() {
 		user="no"
 	fi
 	if [ "$user" = "no" ]; then
-		break
+		return 0
 	fi
 	while true; do
 		read -sp "Enter a password for user '$user': " userpasswd_1
@@ -375,6 +380,9 @@ setup_users() {
 		unset userpasswd_2
 		break
 	done
+}
+
+setup_root() {
 	while true; do
 		read -sp "Enter a password for the super user: " rootpasswd_1
 		writeln
@@ -395,6 +403,75 @@ setup_users() {
 	mesg "Users configured."
 }
 
+setup_system() {
+	writeln
+	writeln "Configuration complete. Press Enter to begin installation (^C to quit)"
+	read x
+	# Check for EFI
+	if [ -e /sys/firmware/efi/efivars ]; then
+		efi=1
+		mesg "System is using EFI"
+	else
+		mesg "System is using BIOS/CSM"
+	fi
+	# NTP
+	timedatectl set-ntp true
+	mesg "NTP enabled."
+	# Check for network connection
+	if ping -c3 archlinux.org; then
+		mesg "Network is operational."
+	else
+		ewriteln "Network failed for an unknown reason; you're on your own, sorry."
+		exit 1
+	fi
+	# Automatic partitioning
+	if [ "$partitionmethod" = "automatic" ]; then
+		partition_boot=/dev/"$disk"1
+		partition_data=/dev/"$disk"2
+		# nvme partitions are named differently
+		if sgrep "nvme.n." "$disk"; then
+			partition_boot=/dev/"$disk"p1
+			partition_data=/dev/"$disk"p2
+		fi
+		if [ -z "$efi" ]; then
+			writeln "
+size=1G,type=$PTYPE_BIOSBOOT
+        type=$PTYPE_LINUXFST
+" | sfdisk /dev/"$disk"
+		else
+			writeln "
+size=1G,type=$PTYPE_EFISYSTM
+        type=$PTYPE_LINUXFST
+" | sfdisk /dev/"$disk"
+		fi
+		mesg "Automatic partitioning complete."
+	else
+		partition_boot=/dev/"$partition_boot"
+		partition_data=/dev/"$partition_data"
+		[ -z "$partition_swap" ] || partition_swap=/dev/"$partition_swap"
+	fi
+
+	# Format partitions
+	mkfs.fat -F32 "$partition_boot"
+	mkfs.ext4     "$partition_data"
+	[ -z "$partition_swap" ] || mkswap "$partition_swap"
+
+	# Mount partitions
+	umount -R /mnt
+	mkdir -p /mnt/virbos/boot
+	mount "$partition_data" /mnt/virbos
+	mount "$partition_boot" /mnt/virbos/boot
+	[ -z "$partition_swap" ] || swapon "$partition_swap"
+	mesg "Partition initialization complete. Installing system..."
+
+	# Install packages to new root
+	pkglist="
+	base base-devel linux linux-firmware vim git neofetch maxfetch
+	networkmanager virbos-logos virbos-utils"
+	[ -z "$use_grub" ] || pkglist="$pkglist grub"
+	pacstrap -cKP /mnt/virbos $pkglist
+}
+
 # Begin
 
 if [ "$(whoami)" != "root" ]; then
@@ -412,5 +489,7 @@ setup_tzone
 setup_network
 setup_disks
 setup_users
+setup_root
+setup_system
 
 # vi: ft=sh
