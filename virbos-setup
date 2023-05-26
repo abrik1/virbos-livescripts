@@ -286,9 +286,7 @@ setup_tzone() {
 setup_network() {
 	writeln
 	read -p "Enter a system hostname: [virbos] " hostname
-	if [ -z "$hostname" ]; then
-		hostname="virbos"
-	fi
+	[ -z "$hostname" ] && hostname="virbos"
 	if testnetwork; then
 		mesg "Network configured."
 		return 0
@@ -356,18 +354,14 @@ decide the partition layout."
 setup_users() {
 	writeln
 	read -p "Enter a username, or type 'no' to skip: [no] " user
-	if [ -z "$user" ]; then
-		user="no"
-	fi
-	if [ "$user" = "no" ]; then
+	if [ -z "$user" ] || [ "$user" = "no" ]; then
+		unset user
 		return 0
 	fi
 	while true; do
 		read -sp "Enter a password for user '$user': " userpasswd_1
 		writeln
-		if [ -z "$userpasswd_1" ]; then
-			continue
-		fi
+		[ -z "$userpasswd_1" ] && continue
 		read -sp "Enter it again: " userpasswd_2
 		writeln
 		if [ "$userpasswd_1" != "$userpasswd_2" ]; then
@@ -385,9 +379,7 @@ setup_root() {
 	while true; do
 		read -sp "Enter a password for the super user: " rootpasswd_1
 		writeln
-		if [ -z "$rootpasswd_1" ]; then
-			continue
-		fi
+		[ -z "$rootpasswd_1" ] && continue
 		read -sp "Enter it again: " rootpasswd_2
 		writeln
 		if [ "$rootpasswd_1" != "$rootpasswd_2" ]; then
@@ -437,6 +429,7 @@ setup_system() {
 
 	# Automatic partitioning
 	if [ "$partitionmethod" = "automatic" ]; then
+		use_grub=1
 		partition_boot=/dev/"$disk"1
 		partition_data=/dev/"$disk"2
 		# nvme partitions are named differently
@@ -480,7 +473,7 @@ size=1G,type=$PTYPE_EFISYSTM
 	pkglist="base base-devel linux linux-firmware vim git zsh neofetch
 				maxfetch networkmanager virbos-logos virbos-utils"
 	[ -z "$use_grub" ] || pkglist="$pkglist grub"
-	pacstrap -cKP /mnt/virbos $pkglist
+	pacstrap -P /mnt/virbos $pkglist
 
 	genfstab -U /mnt/virbos >> /mnt/virbos/etc/fstab
 	systemd-firstboot --root=/mnt/virbos \
@@ -490,7 +483,9 @@ size=1G,type=$PTYPE_EFISYSTM
 		--root-password="$rootpasswd"
 
 	# Add user
-	useradd -mb /mnt/virbos/home -gwheel
+	if ! [ -z "$user" ]; then
+		useradd -mg wheel -R /mnt/virbos "$user"
+	fi
 	writeln '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /mnt/virbos/etc/sudoers.d/virbos
 }
 
