@@ -231,18 +231,17 @@ getlayout() {
 
 define_partitions(){
 	writeln "Formatting ${partition_data} as ext4"
-	mkfs.ext4 ${partition_data}
-	echo "$partition_swap"
+	mkfs.ext4 /dev/${partition_data}
 	if ["$partition_swap" != 'n'];then
-		writeln "Formatting ${partition_swap} as swap"
+		writeln "Formatting /dev/${partition_swap} as swap"
 		mkswap ${partition_swap}
 	fi
 	if ["$partition_home" != 'n'];then
-		writeln "Formatting ${partition_home} as ext4"
+		writeln "Formatting /dev/${partition_home} as ext4"
 		mkfs.ext4 ${partition_home}
 	fi
-	writeln "Formatting ${partition_boot} as FAT32"
-	mkfs.fat -F32 ${partition_boot}
+	writeln "Formatting /dev/${partition_boot} as FAT32"
+	mkfs.fat -F32 /dev/${partition_boot}
 }
 
 mount_partitions(){
@@ -433,6 +432,7 @@ setup_users() {
 	mesg "Users configured."
 }
 
+
 # Begin
 
 if [ "$(whoami)" != "root" ]; then
@@ -450,7 +450,6 @@ setup_tzone
 setup_network
 setup_disks
 setup_users
-getlayout
 define_partitions
 mount_partitions
 
