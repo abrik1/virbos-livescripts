@@ -232,11 +232,11 @@ getlayout() {
 define_partitions(){
 	writeln "Formatting ${partition_data} as ext4"
 	mkfs.ext4 /dev/${partition_data}
-	if ["$partition_swap" != 'n'];then
+	if [ "$partition_swap" != 'n' ];then
 		writeln "Formatting /dev/${partition_swap} as swap"
 		mkswap ${partition_swap}
 	fi
-	if ["$partition_home" != 'n'];then
+	if [ "$partition_home" != 'n' ];then
 		writeln "Formatting /dev/${partition_home} as ext4"
 		mkfs.ext4 ${partition_home}
 	fi
@@ -250,11 +250,11 @@ mount_partitions(){
 	writeln "Mounting ${partition_boot} as /mnt/boot"
 	mkdir /mnt/boot
 	mount /dev/${partition_boot} /mnt/boot
-	if ["$partition_swap" != 'n'];then
+	if [ "$partition_swap" != 'n' ];then
 		writeln "Enabling swap on ${partition_swap}"
 		swapon /dev/${partition_swap}
 	fi
-	if ["$partition_home" != 'n'];then
+	if [ "$partition_home" != 'n' ];then
 		writeln "Mounting ${partition_home} as /mnt/home"
 		mkdir /mnt/home
 		mount /dev/${partition_home} /mnt/home
