@@ -269,7 +269,6 @@ setup_keymaps() {
 	done
 	ask_customhelp "What keymap would you like to use?" "$keymaps" us "localectl --no-pager list-keymaps | less -E"
 	keymap="$answer"
-	loadkeys "$answer"
 	mesg "Keymap configured."
 }
 
@@ -407,6 +406,7 @@ setup_system() {
 	writeln
 	writeln "Configuration complete. Press Enter to begin installation (^C to quit)"
 	read x
+
 	# Check for EFI
 	if [ -e /sys/firmware/efi/efivars ]; then
 		efi=1
@@ -414,16 +414,27 @@ setup_system() {
 	else
 		mesg "System is using BIOS/CSM"
 	fi
+
 	# NTP
 	timedatectl set-ntp true
 	mesg "NTP enabled."
+
 	# Check for network connection
 	if ping -c3 archlinux.org; then
-		mesg "Network is operational."
+		mesg "Network test succeeded."
 	else
 		ewriteln "Network failed for an unknown reason; you're on your own, sorry."
 		exit 1
 	fi
+
+	# Check for partitions that are already mounted
+	[ -z "$(lsblk | grep '^[^a-z][^a-z][a-z]' | awk '{print $1, $7}' |
+	grep "$(printf "$disk" | sed "s/\/dev\///")" | awk '{print $2}')" ] ||
+		for mountpoint in $(lsblk | grep '^[^a-z][^a-z][a-z]' | awk '{print $1, $7}' |
+		grep "$(printf "$disk" | sed "s/\/dev\///")" | awk '{print $2}'); do
+			umount -Rv "$mountpoint"
+		done
+
 	# Automatic partitioning
 	if [ "$partitionmethod" = "automatic" ]; then
 		partition_boot=/dev/"$disk"1
@@ -457,19 +468,30 @@ size=1G,type=$PTYPE_EFISYSTM
 	[ -z "$partition_swap" ] || mkswap "$partition_swap"
 
 	# Mount partitions
-	umount -R /mnt
-	mkdir -p /mnt/virbos/boot
+	rm -fr /mnt/virbos
+	mkdir -p /mnt/virbos
 	mount "$partition_data" /mnt/virbos
+	mkdir -p /mnt/virbos/boot
 	mount "$partition_boot" /mnt/virbos/boot
 	[ -z "$partition_swap" ] || swapon "$partition_swap"
 	mesg "Partition initialization complete. Installing system..."
 
 	# Install packages to new root
-	pkglist="
-	base base-devel linux linux-firmware vim git neofetch maxfetch
-	networkmanager virbos-logos virbos-utils"
+	pkglist="base base-devel linux linux-firmware vim git zsh neofetch
+				maxfetch networkmanager virbos-logos virbos-utils"
 	[ -z "$use_grub" ] || pkglist="$pkglist grub"
 	pacstrap -cKP /mnt/virbos $pkglist
+
+	genfstab -U /mnt/virbos >> /mnt/virbos/etc/fstab
+	systemd-firstboot --root=/mnt/virbos \
+		--keymap="$keymap" \
+		--timezone="$timezone" \
+		--hostname="$hostname" \
+		--root-password="$rootpasswd"
+
+	# Add user
+	useradd -mb /mnt/virbos/home -gwheel
+	writeln '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /mnt/virbos/etc/sudoers.d/virbos
 }
 
 # Begin
