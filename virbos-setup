@@ -214,6 +214,11 @@ getlayout() {
 			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
 			partition_swap="$answer"
 		fi
+		ask_yn "Do you want to use a different partition for /home?"n
+		if [ "$answer" = 'y' ];then
+			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
+			partition_home="$answer"
+		fi
 		ask_nodefault "What partition would you like to use for the operating system?" "$partitions"
 		partition_data="$answer"
 	elif [ "$answer" = 'n' ]; then
@@ -227,20 +232,34 @@ getlayout() {
 define_partitions(){
 	writeln "Formatting ${partition_data} as ext4"
 	mkfs.ext4 ${partition_data}
-	writeln "Formatting ${partition_swap} as swap"
-	mkswap ${partition_swap}
+	echo "$partition_swap"
+	if ["$partition_swap" != 'n'];then
+		writeln "Formatting ${partition_swap} as swap"
+		mkswap ${partition_swap}
+	fi
+	if ["$partition_home" != 'n'];then
+		writeln "Formatting ${partition_home} as ext4"
+		mkfs.ext4 ${partition_home}
+	fi
 	writeln "Formatting ${partition_boot} as FAT32"
 	mkfs.fat -F32 ${partition_boot}
 }
 
 mount_partitions(){
 	writeln "Mounting ${partition_data} as /mnt"
-	mount ${partition_data} /mnt
+	mount /dev/${partition_data} /mnt
 	writeln "Mounting ${partition_boot} as /mnt/boot"
 	mkdir /mnt/boot
-	mount ${partition_boot} /mnt/boot
-	writeln "Enabling swap on ${partition_swap}"
-	swapon ${partition_swap}
+	mount /dev/${partition_boot} /mnt/boot
+	if ["$partition_swap" != 'n'];then
+		writeln "Enabling swap on ${partition_swap}"
+		swapon /dev/${partition_swap}
+	fi
+	if ["$partition_home" != 'n'];then
+		writeln "Mounting ${partition_home} as /mnt/home"
+		mkdir /mnt/home
+		mount /dev/${partition_home} /mnt/home
+	fi
 }
 
 partition_tui() {
@@ -431,6 +450,7 @@ setup_tzone
 setup_network
 setup_disks
 setup_users
+getlayout
 define_partitions
 mount_partitions
 
