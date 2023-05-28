@@ -209,14 +209,20 @@ getlayout() {
 				partitions="$partitions,$partition"
 			fi
 		done
-		ask_nodefault "What partition would you like to use as the boot partition?" "$partitions"
-		partition_boot=/dev/"$answer"
 		ask_yn "Do you want to install a bootloader?" y
-		[ "$answer" = y ] && use_grub=1
+		if [ "$answer" = 'y' ]; then
+			ask_nodefault "What partition would you like to use for the bootloader?" "$partitions"
+			partition_boot="$answer"
+		fi
 		ask_yn "Do you want to use a swap partition?" n
 		if [ "$answer" = 'y' ]; then
 			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
 			partition_swap="$answer"
+		fi
+		ask_yn "Do you want to use a different partition for /home?" n
+		if [ "$answer" = 'y' ];then
+			ask_nodefault "What partition would you like to use in place of /home?" "$partitions"
+			partition_home="$answer"
 		fi
 		ask_nodefault "What partition would you like to use for the operating system?" "$partitions"
 		partition_data="$answer"
