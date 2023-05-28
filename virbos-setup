@@ -214,9 +214,9 @@ getlayout() {
 			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
 			partition_swap="$answer"
 		fi
-		ask_yn "Do you want to use a different partition for /home?"n
+		ask_yn "Do you want to use a different partition for /home?" n
 		if [ "$answer" = 'y' ];then
-			ask_nodefault "What partition would you like to use for swap space?" "$partitions"
+			ask_nodefault "What partition would you like to use in place of /home?" "$partitions"
 			partition_home="$answer"
 		fi
 		ask_nodefault "What partition would you like to use for the operating system?" "$partitions"
